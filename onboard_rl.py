@@ -29,20 +29,34 @@ account_id = boto3.client('sts').get_caller_identity().get('Account')
 s3 = boto3.resource('s3')
 
 
-globalVars = {}
-globalVars['tagName']               = "Prisma-flowlogs"
-globalVars['Log-GroupName']         = "Prisma-flowlogs"
-globalVars['IAM-RoleName']          = "Prisma-VPC-flowlogs-role"
-globalVars['regions']               = [region['RegionName'] for region in ec2Client.describe_regions()['Regions']]
-globalVars['username']              = os.environ["PRISMA_USER_NAME"]
-globalVars['password']              = os.environ["PRISMA_PASSWORD"]
-globalVars['customerName']          = os.environ["PRISMA_CUSTOMER_NAME"]
-globalVars['accountname']           = os.environ["PRISMA_ACCOUNT_NAME"]
-globalVars['accountgroup']        = os.environ["PRISMA_ACCOUNT_GROUP"]
-globalVars['createacct']            = os.environ["PRISMA_ACCOUNT"]
-globalVars['cf-region']             = os.environ["CF_REGION"]
-globalVars['accountgroupid']	    = None
-
+globalVars = {
+    'tagName':
+    "Prisma-flowlogs",
+    'Log-GroupName':
+    "Prisma-flowlogs",
+    'IAM-RoleName':
+    "Prisma-VPC-flowlogs-role",
+    'regions': [
+        region['RegionName']
+        for region in ec2Client.describe_regions()['Regions']
+    ],
+    'username':
+    os.environ["PRISMA_USER_NAME"],
+    'password':
+    os.environ["PRISMA_PASSWORD"],
+    'customerName':
+    os.environ["PRISMA_CUSTOMER_NAME"],
+    'accountname':
+    os.environ["PRISMA_ACCOUNT_NAME"],
+    'accountgroup':
+    os.environ["PRISMA_ACCOUNT_GROUP"],
+    'createacct':
+    os.environ["PRISMA_ACCOUNT"],
+    'cf-region':
+    os.environ["CF_REGION"],
+    'accountgroupid':
+    None,
+}
 ctClient    = boto3.client   ('cloudtrail', region_name=globalVars['cf-region'])
 if os.environ["PRISMA_TENANT"]=="app":
   tenant="api"
@@ -149,37 +163,34 @@ def setupvpc(globalVars):
     print("VPCS for region named", region, vpcs)
 
 def create_account_information(account_name):
-    external_id = ExternalID
-    account_id = boto3.client('sts').get_caller_identity().get('Account')
-    arn = "arn:aws:iam::"+ account_id + ":role/" + rolename
-    account_information = {
-        'name': account_name,
-        'external_id': external_id,
-        'account_id': account_id,
-        'arn': arn
-    }
-    return account_information
+  external_id = ExternalID
+  account_id = boto3.client('sts').get_caller_identity().get('Account')
+  arn = f"arn:aws:iam::{account_id}:role/{rolename}"
+  return {
+      'name': account_name,
+      'external_id': external_id,
+      'account_id': account_id,
+      'arn': arn,
+  }
 
 def get_auth_token(globalVars):
-    url = "https://%s.prismacloud.io/login" % (tenant)
-    headers = {'Content-Type': 'application/json'}
-    payload = {
-        "username": globalVars['username'],
-        "password": globalVars['password'],
-        "customerName": globalVars['customerName']
-    }
-    payload = json.dumps(payload)
-    response = requests.request("POST", url, headers=headers, data=payload)
-    token = response.json()['token']
-    return token
+  url = f"https://{tenant}.prismacloud.io/login"
+  headers = {'Content-Type': 'application/json'}
+  payload = {
+      "username": globalVars['username'],
+      "password": globalVars['password'],
+      "customerName": globalVars['customerName']
+  }
+  payload = json.dumps(payload)
+  response = requests.request("POST", url, headers=headers, data=payload)
+  return response.json()['token']
 
 def call_redlock_api(auth_token, action, endpoint, payload, globalVars):
-    url = "https://%s.prismacloud.io/" % tenant + endpoint
-    headers = {'Content-Type': 'application/json', 'x-redlock-auth': auth_token}
-    payload = json.dumps(payload)
-    LOGGER.info(payload)
-    response = requests.request(action, url, headers=headers, data=payload)
-    return response
+  url = f"https://{tenant}.prismacloud.io/" + endpoint
+  headers = {'Content-Type': 'application/json', 'x-redlock-auth': auth_token}
+  payload = json.dumps(payload)
+  LOGGER.info(payload)
+  return requests.request(action, url, headers=headers, data=payload)
 
 def register_account_with_redlock(globalVars, account_information):
     token = get_auth_token(globalVars)
@@ -294,7 +305,8 @@ def create_iam():
       print('Role Already Exists...')
       iamRole = {
           'Role': {
-              'Arn': 'arn:aws:iam::%s:role/%s' % (account_id, globalVars['IAM-RoleName'])
+              'Arn':
+              f"arn:aws:iam::{account_id}:role/{globalVars['IAM-RoleName']}"
           }
       }
 
@@ -313,7 +325,7 @@ def create_iam():
       print('Policy Already Exists...Continuing')
       flowLogsPermPolicy = {
           'Policy': {
-              'Arn': 'arn:aws:iam::%s:policy/flowLogsPermissions' % account_id
+              'Arn': f'arn:aws:iam::{account_id}:policy/flowLogsPermissions'
           }
       }
       print(flowLogsPermPolicy)
@@ -343,11 +355,10 @@ def createCloudwatchLog(region):
     logGroup = logsClient.create_log_group( logGroupName = globalVars['Log-GroupName'],
                                           tags = {'Key': globalVars['tagName'] , 'Value':'Flow-Logs'}
                                           )
-    print(('Created CloudWatchLog in %s' % region))
+    print(f'Created CloudWatchLog in {region}')
 
   except logsClient.exceptions.ResourceAlreadyExistsException as e:
-   print("LogGroup already exists for ", region)
-   pass
+    print("LogGroup already exists for ", region)
 
 def createflowlog(region,vpc):
   ec2Client   = boto3.client   ( 'ec2', region_name = region )
@@ -358,7 +369,7 @@ def createflowlog(region,vpc):
                                            LogGroupName             = globalVars['Log-GroupName'],
                                            DeliverLogsPermissionArn = iamRole['Role']['Arn']
                                           )
-    print(('Created FlowLog in %s' % region))
+    print(f'Created FlowLog in {region}')
   except ClientError as e:
     print(e)
 
@@ -384,7 +395,6 @@ def is_flow_logs_enabled(region,vpc):
     if len(response['FlowLogs']) != 0 and response['FlowLogs'][0]['LogDestinationType']=='cloud-watch-logs': return True
   except ClientError as e:
     raise(e)
-    print(e)
 
 
 
@@ -395,40 +405,39 @@ def get_vpc_list(region):
   vpcarray = list(ec2.vpcs.filter())
   print('VPC Array')
   print(vpcarray)
-  if not vpcarray:
-    pass
-  else:
+  if vpcarray:
     for each in vpcarray:
       print(each.vpc_id)
       if is_flow_logs_enabled(region,each.vpc_id):
-        print(("Flowlog exists for %s" % each.vpc_id))
+        print(f"Flowlog exists for {each.vpc_id}")
       else:
         print("No flowlog found for", each.vpc_id, "creating")
         createflowlog(region,each.vpc_id)
 
 def send_response(event, context, response_status, response_data):
-    '''Send a resource manipulation status response to CloudFormation'''
-    response_body = json.dumps({
-        "Status": response_status,
-        "Reason": "See the details in CloudWatch Log Stream: " + context.log_stream_name,
-        "PhysicalResourceId": context.log_stream_name,
-        "StackId": event['StackId'],
-        "RequestId": event['RequestId'],
-        "LogicalResourceId": event['LogicalResourceId'],
-        "Data": response_data
-    })
+  '''Send a resource manipulation status response to CloudFormation'''
+  response_body = json.dumps({
+      "Status": response_status,
+      "Reason":
+      f"See the details in CloudWatch Log Stream: {context.log_stream_name}",
+      "PhysicalResourceId": context.log_stream_name,
+      "StackId": event['StackId'],
+      "RequestId": event['RequestId'],
+      "LogicalResourceId": event['LogicalResourceId'],
+      "Data": response_data,
+  })
 
-    LOGGER.info('ResponseURL: %s', event['ResponseURL'])
-    LOGGER.info('ResponseBody: %s', response_body)
+  LOGGER.info('ResponseURL: %s', event['ResponseURL'])
+  LOGGER.info('ResponseBody: %s', response_body)
 
-    opener = build_opener(HTTPHandler)
-    request = Request(event['ResponseURL'], data=response_body.encode("utf-8"))
-    request.add_header('Content-Type', '')
-    request.add_header('Content-Length', len(response_body))
-    request.get_method = lambda: 'PUT'
-    response = opener.open(request)
-    LOGGER.info("Status code: %s", response.getcode())
-    LOGGER.info("Status message: %s", response.msg)
+  opener = build_opener(HTTPHandler)
+  request = Request(event['ResponseURL'], data=response_body.encode("utf-8"))
+  request.add_header('Content-Type', '')
+  request.add_header('Content-Length', len(response_body))
+  request.get_method = lambda: 'PUT'
+  response = opener.open(request)
+  LOGGER.info("Status code: %s", response.getcode())
+  LOGGER.info("Status message: %s", response.msg)
 
 
 def timeout_handler(_signal, _frame):
